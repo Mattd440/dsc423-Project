@@ -1,0 +1,182 @@
+---
+title: "Project-423"
+author: "MattDiederick"
+date: "February 28, 2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Librarys - Load File - clean up data
+```{r}
+  library(ggplot2)
+  library(dplyr)
+  library(tidyr)
+  library(car)
+  library(psych)
+  library(leaps)
+  library(caret)
+  library(QuantPsyc)
+
+  # Load File
+  df = read.delim('Admission.csv', header = TRUE, sep=',')
+
+  #Drop Serial.No Column
+  grad_df = df[,-c(1)]
+  
+  #SetUp For later Use
+  cormatrix = as.data.frame(round(cor(grad_df), 3))
+  cormatrix = cormatrix %>% mutate(var1 =rownames(cormatrix))
+  
+  #Cast Qualitative Variables to Factors
+  #grad_df$University.Rating = as.factor(grad_df$University.Rating)
+  grad_df$Research = as.factor(grad_df$Research)
+  #grad_df$SOP = as.factor(grad_df$SOP)
+  #grad_df$LOR = as.factor(grad_df$LOR)
+  
+  grad_df$GRE.Score = scale(grad_df$GRE.Score, scale=TRUE, center=FALSE)
+  grad_df$TOEFL.Score = scale(grad_df$TOEFL.Score, scale=TRUE, center=FALSE)
+  head(grad_df,10)
+  
+```
+ 
+ 
+# Visualize Data
+
+```{r}
+ggplot(data=grad_df, aes(x=GRE.Score, y=Chance.of.Admit, col=Research)) +
+  geom_point() +
+  geom_smooth(method='lm', se=FALSE) +
+  ggtitle("Admission by GRE Score")
+
+ggplot(data=grad_df, aes(x=TOEFL.Score, y=Chance.of.Admit, col=Research)) +
+  geom_point() +
+  geom_smooth(method='lm', se=FALSE)+
+  ggtitle("Admission by TOEFL Score")
+
+ggplot(data=grad_df, aes(x=SOP, y=Chance.of.Admit, col=Research)) +
+  geom_point() +
+  geom_smooth(method='lm', se=FALSE)+
+  ggtitle("Admission by SOP Strength")
+
+ggplot(data=grad_df, aes(x=LOR, y=Chance.of.Admit, col=Research)) +
+  geom_point() +
+  geom_smooth(method='lm', se=FALSE)+
+  ggtitle("Admission by GRE Score")+
+  ggtitle("Admission by LOR Strength")
+
+ggplot(data=grad_df, aes(x=CGPA, y=Chance.of.Admit, col=Research)) +
+  geom_point() +
+  geom_smooth(method='lm', se=FALSE)+
+  ggtitle("Admission by CPGA")
+
+ggplot(data=grad_df, aes(x=University.Rating, y=Chance.of.Admit, col=Research)) +
+  geom_boxplot()+
+  ggtitle("Admission by University Ratings")
+
+
+
+```
+
+# View Correlations 
+
+
+```{r}
+
+cleanmatrix = gather(data=cormatrix, key='var2', value='val', -var1)
+
+cormatrix
+
+ggplot(cleanmatrix, aes(x=var1, y=var2, fill=val)) + 
+ geom_tile(colour='white', size=.25)+
+theme(axis.text.x = element_text(angle = 90, vjust = 0.5))+
+  scale_colour_gradientn(colours=terrain.colors(10))
+
+
+```
+
+
+#define function to change ODDS back to PROBABilty
+```{r}
+sigmoid = function(x){
+  return (1/exp(-x))
+}
+```
+
+# FIT FULL MODEL 
+* Here we transform Chance.of.Admit using log(x/1-x) that changes it from a probability to odds. We then use the sigmoid function above to change our fitted values which are odds back to probability. This ensure our predictions stay between 0 and 1 since we our predicting probability. These functions our used in logistic regression , but we are predicting probability and not a binary variable so we use the linear model with transformations on the response variable.  
+```{r}
+
+full_model = lm(data=grad_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit)) ~ . )
+summary(full_model)
+vif(full_model)
+
+#x=grad_df$Chance.of.Admit
+#fitted = fitted(full_model)
+#y = log(x/(1-x))
+#z = sapply(y, function(x){1/(1+exp(-x))})
+#cbind(x,y,z)
+
+
+```
+
+
+
+# Apply Variable Selection
+
+
+```{r}
+base = lm(data=grad_df, formula = Chance.of.Admit ~ 1)
+#bward = step(full_model, direction='backward', trace=TRUE)
+fward = step(base, scope=list(upper=full_model, lower=~1), direction='forward', trace=TRUE)
+
+```
+
+
+
+# Fit Model With Selected Variables
+
+```{r}
+
+model2 = lm(data=grad_df, formula = log(Chance.of.Admit/(1-Chance.of.Admit)) ~CGPA + GRE.Score + LOR + Research + TOEFL.Score+University.Rating)
+summary(model2)
+```
+
+
+
+# Fit Model With Interaction Terms
+
+```{r}
+
+model3 = lm(data=grad_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~(CGPA+ GRE.Score + LOR + Research + TOEFL.Score+University.Rating)^2)
+summary(model3)
+
+```
+
+
+
+#Fit Model With Research Interaction
+
+```{r}
+
+model4 = lm(data=grad_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+University.Rating+LOR+Research+TOEFL.Score+ Research:CGPA + Research:GRE.Score + Research:TOEFL.Score+Research:University.Rating + Research:LOR)
+summary(model4)
+```
+
+# Remove Insignificant Features
+```{r}
+model5= lm(data=grad_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+University.Rating+LOR+Research+TOEFL.Score+ Research:CGPA +Research:University.Rating)
+summary(model5)
+```
+
+#Cross Validate Model 5-Fold 
+
+```{r}
+cv_control = trainControl(method = 'cv', number=5, verboseIter = TRUE)
+cv_model = train(log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+University.Rating+LOR+Research+TOEFL.Score+ Research:CGPA +Research:University.Rating ,data=grad_df, method='lm', trControl = cv_control)
+
+cv_model
+```
+
