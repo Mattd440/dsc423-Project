@@ -9,16 +9,6 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
----
-title: "Project-423"
-author: "MattDiederick"
-date: "February 28, 2019"
-output: word_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
 
 # Load Librarys - Load File - clean up data
 ```{r}
@@ -47,14 +37,40 @@ knitr::opts_chunk$set(echo = TRUE)
   #grad_df$SOP = as.factor(grad_df$SOP)
   #grad_df$LOR = as.factor(grad_df$LOR)
   
-  grad_df$GRE.Score = scale(grad_df$GRE.Score, scale=TRUE, center=TRUE)
-  grad_df$TOEFL.Score = scale(grad_df$TOEFL.Score, scale=TRUE, center=TRUE)
-  head(grad_df,10)
+  #SCALE FEATURES
+  #grad_df$GRE.Score = scale(grad_df$GRE.Score, scale=TRUE, center=TRUE)
+  #grad_df$TOEFL.Score = scale(grad_df$TOEFL.Score, scale=TRUE, center=TRUE)
+  #head(grad_df,10)
   
+  
+  
+  
+  
+  #TRAIN TEST SPLIT
   inds = sample(1:nrow(grad_df), .8*nrow(grad_df))
   train_df = grad_df[inds,]
   test_df = grad_df[-inds,]
   
+#define function to change ODDS back to PROBABilty
+#define function to plot residuals
+#define function to create normal qq plot
+
+sigmoid = function(x){
+  return (1/(1+exp(-x)))
+}
+
+
+plotResiduals = function(data,model){
+  ggplot(data=data,aes(x=sigmoid(fitted(model)), y=rstudent(model))) +
+    geom_point() +
+    geom_hline(yintercept=0, col='red') +
+    ggtitle('Fitted values vs standard residuals')
+}
+
+plotNormalResidual = function(model){
+  qqnorm(rstandard(model))
+  qqline(rstandard(model), col='red')
+}
   
 ```
  
@@ -105,6 +121,7 @@ ggplot(data=grad_df, aes(x=University.Rating, y=Chance.of.Admit, col=Research)) 
 
 
 ```{r}
+#CREATE CORRELATION HEATMAP
 
 cleanmatrix = gather(data=cormatrix, key='var2', value='val', -var1)
 
@@ -118,49 +135,28 @@ theme(axis.text.x = element_text(angle = 90, vjust = 0.5))+
 
 ```
 
-
-#define function to change ODDS back to PROBABilty
-#define function to plot residuals
-```{r}
-sigmoid = function(x){
-  return (1/(1+exp(-x)))
-}
-
-
-plotResiduals = function(data,model){
-  ggplot(data=data,aes(x=sigmoid(fitted(model)), y=rstudent(model))) +
-    geom_point() +
-    geom_hline(yintercept=0, col='red') +
-    ggtitle('Fitted values vs standard residuals')
-}
-
-plotNormalResidual = function(model){
-  qqnorm(rstandard(model))
-  qqline(rstandard(model), col='red')
-}
-
-
-```
-
 # FIT FULL MODEL 
-* Here we transform Chance.of.Admit using log(x/1-x) that changes it from a probability to odds. We then use the sigmoid function above to change our fitted values which are odds back to probability. This ensure our predictions stay between 0 and 1 since we our predicting probability. These functions our used in logistic regression , but we are predicting probability and not a binary variable so we use the linear model with transformations on the response variable.  
+* Here we transform Chance.of.Admit using log(x/1-x) that changes it from a probability to log odds. We then use the sigmoid function above to change our fitted values which are log odds back to probability. This ensure our predictions stay between 0 and 1 since we our predicting probability. These functions our used in logistic regression , but we are predicting probability and not a binary variable so we use the linear model with transformations on the response variable.  
 ```{r}
 
 full_model = lm(data=train_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit)) ~ . )
 summary(full_model)
-vif(full_model)
-
-plotResiduals(train_df, full_model)
-plotNormalResidual(model)
-
 
 ```
 
+#CHECK FOR MULTICOLLINEARITY
+```{r}
+vif(full_model)
+```
+
+#PLOT RESIDUALS
+```{r}
+ plotResiduals(train_df, full_model)
+ plotNormalResidual(full_model)
+```
 
 
 # Apply Variable Selection
-
-
 ```{r}
 base = lm(data=train_df, formula = Chance.of.Admit ~ 1)
 #bward = step(full_model, direction='backward', trace=TRUE)
@@ -170,12 +166,21 @@ fward = step(base, scope=list(upper=full_model, lower=~1), direction='forward', 
 
 
 
-# Fit Model With Selected Variables
+# Fit Model With Selected Variables ADD HIGHORDER 
 
 ```{r}
 
+
 model2 = lm(data=train_df, formula = log(Chance.of.Admit/(1-Chance.of.Admit)) ~CGPA + GRE.Score + LOR + Research+TOEFL.Score +University.Rating)
-summary(model2)
+model2_2 = lm(data=train_df, formula = log(Chance.of.Admit/(1-Chance.of.Admit)) ~CGPA + GRE.Score + LOR + Research+TOEFL.Score +University.Rating + I(CGPA^2) + I(GRE.Score^2) + I(LOR^2) + I(TOEFL.Score^2)+I(University.Rating^2))
+model2_3 = lm(data=train_df, formula = log(Chance.of.Admit/(1-Chance.of.Admit)) ~CGPA + GRE.Score + LOR + Research+TOEFL.Score +University.Rating + I(CGPA^2)  +I(University.Rating^2)+ I(CGPA^3) )
+summary(model2_3)
+
+CGPA2 = train_df$CGPA **2
+CGPA3 = train_df$CGPA **3
+University.Rating2 = train_df$University.Rating **2
+train_df = cbind(train_df,CGPA2, CGPA3, University.Rating2)
+
 ```
 
 
@@ -184,7 +189,7 @@ summary(model2)
 
 ```{r}
 
-model3 = lm(data=train_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~(CGPA+ GRE.Score + LOR + Research+ University.Rating)^2)
+model3 = lm(data=train_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~(CGPA+ GRE.Score + LOR + Research+ University.Rating + CGPA2 + CGPA3 + University.Rating2)^2)
 summary(model3)
 
 ```
@@ -195,13 +200,14 @@ summary(model3)
 
 ```{r}
 
-model4 = lm(data=train_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+LOR+Research + University.Rating+ TOEFL.Score+ Research:TOEFL.Score + Research:CGPA + Research:GRE.Score +Research:LOR+Research:University.Rating)
+
+model4 = lm(data=train_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+LOR+Research + University.Rating+ TOEFL.Score+ Research:TOEFL.Score + Research:CGPA + Research:GRE.Score + CGPA2 + CGPA3 + University.Rating2 +Research:LOR+Research:University.Rating +Research:CGPA2 + Research:University.Rating2 + Research:CGPA3)
 summary(model4)
 ```
 
 # Remove Insignificant Features
 ```{r}
-model5= lm(data=train_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+LOR+Research + University.Rating+ TOEFL.Score + Research:CGPA  +Research:University.Rating)
+model5= lm(data=train_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+LOR+Research + University.Rating+ TOEFL.Score + CGPA2 + CGPA3 + University.Rating2 +Research:University.Rating  )
 summary(model5)
 ```
 
@@ -235,11 +241,11 @@ ggplot(data=train_df, aes(x=hatvalues(model5), y=rstudent(model5)))+
 
 #REMOVE OUTLIERS AND REFIT
 ```{r}
-which(rstudent(model5) >3 | rstudent(model5)< -3)
-outlierindexs = c(10,11,65,69)
+#which(rstudent(model5) >3 | rstudent(model5)< -3)
+outlierindexs = c(10,11,66,67,93)
 grad_df_noOutliers =train_df[-outlierindexs, ]
 cbind(nrow(train_df), nrow(grad_df_noOutliers))
-model6=lm(data=grad_df_noOutliers, formula = log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+LOR+Research + University.Rating+ TOEFL.Score + Research:CGPA  +Research:University.Rating)
+model6=lm(data=grad_df_noOutliers, formula = log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+LOR+Research + University.Rating+ TOEFL.Score + CGPA2 + CGPA3 + University.Rating2 +Research:University.Rating )
 summary(model6)
 
 ```
@@ -256,7 +262,7 @@ plotNormalResidual(model6)
 
 ```{r}
 cv_control = trainControl(method = 'cv', number=5, verboseIter = TRUE)
-cv_model = train(log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+LOR+Research + University.Rating+ TOEFL.Score + Research:CGPA  +Research:University.Rating  ,data=train_df, method='lm', trControl = cv_control)
+cv_model = train(log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+LOR+Research + University.Rating+ TOEFL.Score + CGPA2 + CGPA3 + University.Rating2 +Research:University.Rating ,data=train_df, method='lm', trControl = cv_control)
 
 cv_model$results
 
@@ -268,7 +274,11 @@ cv_model$results
 ```{r}
 MAPE = function(y_obs, y_pred){mean(abs((y_obs - y_pred)/y_obs))*100}
 
-odds_preds = predict(model6, test_df)
+tCGPA3 = test_df$CGPA **3
+tUniversity.Rating2 = test_df$University.Rating **2
+
+test_data = data.frame(CGPA=test_df$CGPA, GRE.Score=test_df$GRE.Score, LOR=test_df$LOR, Research=test_df$Research, University.Rating=test_df$University.Rating, TOEFL.Score=test_df$TOEFL.Score, CGPA2=(test_df$CGPA**2) ,CGPA3=(test_df$CGPA**3) ,University.Rating2=(test_df$University.Rating**2))
+odds_preds = predict(model5, test_data)
 prob_preds = sigmoid(odds_preds)
 test_rmse = RMSE(prob_preds,test_df$Chance.of.Admit)
 test_mape = MAPE(test_df$Chance.of.Admit, prob_preds)
