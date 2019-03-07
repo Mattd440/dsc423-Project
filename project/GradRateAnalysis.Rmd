@@ -284,5 +284,8 @@ test_rmse = RMSE(prob_preds,test_df$Chance.of.Admit)
 test_mape = MAPE(test_df$Chance.of.Admit, prob_preds)
 cbind(test_rmse, test_mape)
 
+model5_test= lm(test_df, formula=log(Chance.of.Admit/(1-Chance.of.Admit))~CGPA+GRE.Score+LOR+Research + University.Rating+ TOEFL.Score + I(CGPA^2) + I(CGPA^3) + I(University.Rating^2) +Research:University.Rating)
+summary(model5_test)
+
 ```
 
